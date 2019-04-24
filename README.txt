@@ -5,7 +5,7 @@ https://pwa-starter-kit.polymer-project.org/setup
 Заново написаны:
 /home/nikodim/PWA/phobas/src/components/my-view1.js
 /home/nikodim/PWA/phobas/src/components/my-view2.js
-
+Доработаны некоторые общие для приложения файлы и файлы настроек.
 
 
 
