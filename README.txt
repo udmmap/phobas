@@ -1,5 +1,7 @@
 Используется Polymer 3.
-За шаблон взято приложение pwa–starter–kit.
+Сначала в каталог с приложением необходимо записать файлы Polymer. За шаблон взято приложение pwa–starter–kit.
+https://pwa-starter-kit.polymer-project.org/setup
+Затем скопировать туда файлы из этого репозитория.
 Заново написаны:
 /home/nikodim/PWA/phobas/src/components/my-view1.js
 /home/nikodim/PWA/phobas/src/components/my-view2.js
