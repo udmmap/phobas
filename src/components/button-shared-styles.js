@@ -15,7 +15,7 @@ export const ButtonSharedStyles = css`
     font-size: inherit;
     vertical-align: middle;
     background: transparent;
-    border: none;
+    border: solid;
     cursor: pointer;
   }
 

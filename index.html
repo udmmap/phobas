@@ -25,12 +25,12 @@ subject to an additional IP rights grant found at http://polymer.github.io/PATEN
       a) Add a `basePath` property to the build configuration in your `polymer.json`.
       b) Use the `--base-path` command-line option for `polymer build`.
     -->
-    <base href="/">
+    <base href="/scripts/phobas-dev/">
 
     <link rel="icon" href="images/favicon.ico">
 
     <!-- See https://goo.gl/OOhYW5 -->
-    <link rel="manifest" href="manifest.json">
+    <link rel="manifest" href="./manifest.json.txt" crossOrigin="use-credentials">
 
     <!-- See https://goo.gl/qRE0vM -->
     <meta name="theme-color" content="#3f51b5">
@@ -67,18 +67,26 @@ subject to an additional IP rights grant found at http://polymer.github.io/PATEN
     <link rel="preconnect" href="https://fonts.gstatic.com/" crossorigin>
     <script>
       // Load and register pre-caching Service Worker
-      if ('serviceWorker' in navigator) {
-        window.addEventListener('load', function() {
-          navigator.serviceWorker.register('service-worker.js', {
-            scope: '/',
+
+      window.addEventListener('load', function() {
+        var node = document.getElementById("dev-log");
+        node.textContent="Start!";
+
+        if ('serviceWorker' in navigator) {
+          navigator.serviceWorker.register('./service-worker.js', {
+            scope: '/scripts/phobas-dev/',
           }).then(function(registration) {
             console.log('Service worker зарегистрирован:', registration);
+            node.textContent="Service worker";
           }).catch(function(error) {
-            console.log('Ошибка при регистрации service worker-а:', error);
+            console.error(error);
+            node.textContent=error.toString();
           });
-        
-        });
-      }
+        } else {
+          node.textContent="Service worker not in navigator! isSecureContext: "+window.isSecureContext;
+        }
+      
+      });
 
       // Redux assumes `process.env.NODE_ENV` exists in the ES module build.
       // https://github.com/reactjs/redux/issues/2907
@@ -107,15 +115,190 @@ subject to an additional IP rights grant found at http://polymer.github.io/PATEN
         -webkit-font-smoothing: antialiased;
       }
     </style>
+
+    <script src="../lib/jquery-3.4.0.min.js"></script>
+    <script src="/_layouts/15/MicrosoftAjax.js"></script>
+    <script src="/_layouts/15/sp.runtime.js"></script>
+    <script src="/_layouts/15/sp.js"></script>
+    <script>
+      document.phobas_db = 10;
+
+      document.sendObj = {
+        folderServerRelativeUrl: "/phobas_input/CA_TEST"
+        , contextUrl: "https://azure.spjedi.ru/"
+        
+        , Blob2Base64: function(blob, callback) {
+          var reader = new FileReader();
+          reader.readAsDataURL(blob);
+          reader.onloadend = function () {
+               var base64data = reader.result;
+               callback(base64data);
+          }
+        }
+        
+        , sp_successHandler: function () {
+            this.logObj.writeLog("OK!");
+        }
+
+        , sp_errorHandler: function () {
+            console.error(arguments[1]);
+            this.logObj.writeLog(arguments[1].get_errorCode()+": "+arguments[1].get_errorTypeName()+": "+arguments[1].get_message());
+        }
+
+        ,sendFileRest(record, folderServerRelativeUrl, logObj) {
+
+            var encoded = new TextEncoder().encode(record.blob);
+            var arrayBuffer = encoded.buffer;
+
+            // Construct the endpoint.
+            var fileCollectionEndpoint = String.format(
+                    "{0}/_api/web/getfolderbyserverrelativeurl('{1}')/files" +
+                    "/add(overwrite=true, url='{2}')",
+                    this.contextUrl, folderServerRelativeUrl, record.fName);
+
+            // Send the request and return the response.
+            // This call returns the SharePoint file.
+            console.log(jQuery.ajax({
+                url: fileCollectionEndpoint,
+                type: "POST",
+                data: arrayBuffer,
+                processData: false,
+                headers: {
+                    "accept": "application/json;odata=verbose",
+                    "X-RequestDigest": jQuery("#__REQUESTDIGEST").val(),
+                    "content-length": arrayBuffer.byteLength
+                }
+            }));
+        }
+
+        , sendFile: function (record, folderServerRelativeUrl, logObj) {
+          this.logObj=logObj;
+          if (!folderServerRelativeUrl || folderServerRelativeUrl=="") {
+            logObj.writeLog("Не указан каталог");
+            return;
+          }
+
+          var fileCreateInfo;
+          var clientContext= new SP.ClientContext(this.contextUrl);
+          var web = clientContext.get_web();
+          
+          var folder = web.getFolderByServerRelativeUrl(folderServerRelativeUrl);
+
+          fileCreateInfo = new SP.FileCreationInformation();
+          fileCreateInfo.set_url(record.fname);
+
+          var parObj=this;
+
+          var content = new SP.Base64EncodedByteArray();
+
+          var BASE64_MARKER = ';base64,';
+          var base64Index = record.blob.indexOf(BASE64_MARKER) + BASE64_MARKER.length;
+          var base64 = record.blob.substring(base64Index);
+          var byte_string = window.atob(base64);
+
+          for (var b = 0; b < byte_string.length; b++) {
+            content.append(byte_string.charCodeAt(b));
+          }
+          fileCreateInfo.set_content(content);
+          console.log(fileCreateInfo.get_content().get_length());
+          parObj.sp_newFile = folder.get_files().add(fileCreateInfo);
+          clientContext.load(parObj.sp_newFile);
+          clientContext.executeQueryAsync(
+              Function.createDelegate(parObj, parObj.sp_successHandler),
+              Function.createDelegate(parObj, parObj.sp_errorHandler)
+          );
+        }
+
+		    , initTree: function(treeObj) {
+	        var dirList=[];
+	      
+	        var clientContext = new SP.ClientContext(this.contextUrl);
+	        this.oLibs = clientContext.get_web().get_lists();	
+
+	        var camlQuery = new SP.CamlQuery();
+
+        	clientContext.load(this.oLibs, "Include(RootFolder, BaseType, Title, Hidden)");
+
+          treeObj.writeLog("SP tree: waiting...");
+	        clientContext.executeQueryAsync(
+	        	Function.createDelegate(this, (
+		        	(sender, args)=>{
+		        		var libInfo= "";
+		        		var enLibs = this.oLibs.getEnumerator();
+		        		while (enLibs.moveNext()){
+						      var oLib=enLibs.get_current();
+						      if (oLib.get_baseType()==1 && !oLib.get_hidden()) {
+							      dirList.push({
+							        url:oLib.get_rootFolder().get_serverRelativeUrl()
+							        , title:oLib.get_title()
+							      });
+						      }
+		        		}
+		        		treeObj.setTree("",dirList);
+		        		treeObj.writeLog("SP tree: OK!");
+		        	}))
+	        	, Function.createDelegate(this, (
+	        		(sender, args)=>{
+		        		console.log(args);
+		        		treeObj.writeLog(args.get_message());
+		        	}))
+			    );
+		
+		    }
+
+		    , foldTree: function(treeObj, stServerRelativeUrl) {
+			    console.log(stServerRelativeUrl);
+	        var dirList=[];
+
+			    var context = new SP.ClientContext(this.contextUrl);
+			    var par_folder = context.get_web().getFolderByServerRelativeUrl(stServerRelativeUrl);
+			    this.oFolders = par_folder.get_folders();
+			    context.load(this.oFolders);
+			
+          treeObj.writeLog("SP tree: waiting...");
+			    context.executeQueryAsync(
+				    Function.createDelegate(this, ((sender, args)=>{
+		        		var foldInfo= "";
+		        		var enFlds = this.oFolders.getEnumerator();
+		        		while (enFlds.moveNext()){
+						      var oFld=enFlds.get_current();
+						
+					        dirList.push({
+					          url:oFld.get_serverRelativeUrl()
+					          , title:oFld.get_name()
+					        });
+
+              }
+	        		treeObj.setTree(stServerRelativeUrl,dirList);
+ 		          treeObj.writeLog("SP tree: OK!");
+            }))
+            , Function.createDelegate(this, ((sender, args)=>{treeObj.writeLog(args.get_message());}))
+			    );
+
+		    }
+
+        , getTree: function(treeObj, stRelativeUrl) {
+          if (!stRelativeUrl || stRelativeUrl=="") {
+            this.initTree(treeObj);
+          } else {
+            console.log("getTree: "+stRelativeUrl);
+            this.foldTree(treeObj, stRelativeUrl);
+          };
+
+        }
+      }
+
+    </script>
   </head>
   <body>
     <my-app appTitle="PhoBas"></my-app>
     <noscript>
       Please enable JavaScript to view this website.
     </noscript>
+    <div id="dev-log">INFORMATION</div>
     <!-- Load webcomponents-loader.js to check and load any polyfills your browser needs -->
-    <script src="node_modules/@webcomponents/webcomponentsjs/webcomponents-loader.js"></script>
+    <script src="node_modules/@webcomponents/webcomponentsjs/webcomponents-loader.js" onerror="(error)=>{alert(error.toString());}"></script>
     <!-- Built with love using PWA Starter Kit -->
-    <script type="module" src="src/components/my-app.js"></script>
+    <script type="module" src="src/components/my-app.js" onerror="(error)=>{alert(error.toString());}"></script>
   </body>
 </html>

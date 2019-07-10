@@ -16,7 +16,11 @@ export const CLOSE_SNACKBAR = 'CLOSE_SNACKBAR';
 
 export const navigate = (path) => (dispatch) => {
   // Extract the page name from path.
+  path = path.substring(path.lastIndexOf('/')+1)==='index.html'?'/':path;
+
   const page = path === '/' ? 'view1' : path.slice(1);
+
+  console.log(page,": ",path);
 
   // Any other info you might want to extract from the path (like page type),
   // you can do here
